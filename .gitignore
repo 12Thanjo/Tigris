@@ -1,0 +1,13 @@
+# directories
+.vs/
+/build
+
+# sublime
+*.sublime-project
+*.sublime-workspace
+
+# visual studio
+*.vcxproj
+*.vcxproj.user
+*.vcxproj.filters
+*.sln
