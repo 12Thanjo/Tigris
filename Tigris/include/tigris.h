@@ -11,5 +11,10 @@
 #pragma once
 
 
+#include "./Matrix.h"
+#include "./AI.h"
+#include "./Environment.h"
+
+
 #include "./connect_4/board.h"
 #include "./tic_tac_toe/board.h"

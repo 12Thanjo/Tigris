@@ -36,8 +36,12 @@ namespace tigris::tic_tac_toe{
 			};
 
 
-			auto placeX(Coordinate coord) -> void;
 			auto placeO(Coordinate coord) -> void;
+			auto placeX(Coordinate coord) -> void;
+
+
+			EVO_NODISCARD auto getPossibleMovesForX() const -> std::vector<Board>;
+			EVO_NODISCARD auto getPossibleMovesForO() const -> std::vector<Board>;
 
 
 
@@ -45,21 +49,28 @@ namespace tigris::tic_tac_toe{
 				IN_PROGRESS = 0,
 				X_WIN = 1,
 				O_WIN = 2,
+				DRAW = 3,
 			};
 			EVO_NODISCARD auto getGameStatus() const -> GameStatus;
 
+
+			EVO_NODISCARD auto getAIData() const -> std::vector<float>;
 
 			EVO_NODISCARD auto toString() const -> std::string;
 
 
 		private:
-			EVO_NODISCARD auto get_space(Coordinate coord) const -> Space {
+			EVO_NODISCARD auto operator[](Coordinate coord) const -> const Space& {
 				return this->spaces[coord.row][coord.collumn];
 			}
 			
-			EVO_NODISCARD auto get_space(Coordinate coord) -> Space& {
+			EVO_NODISCARD auto operator[](Coordinate coord) -> Space& {
 				return this->spaces[coord.row][coord.collumn];
 			}
+
+
+			template<Space PIECE>
+			EVO_NODISCARD auto get_possible_moves() const -> std::vector<Board>;
 
 
 			EVO_NODISCARD auto is_row_win(size_t row) const -> bool;
@@ -75,3 +86,17 @@ namespace tigris::tic_tac_toe{
 
 	
 }
+
+
+
+
+template<>
+struct std::formatter<tigris::tic_tac_toe::Board>{
+    constexpr auto parse(std::format_parse_context& ctx) const -> auto {
+        return ctx.begin();
+    }
+
+    auto format(const tigris::tic_tac_toe::Board& board, std::format_context& ctx) const -> auto {
+        return std::format_to(ctx.out(), "{}", board.toString());
+    }
+};
