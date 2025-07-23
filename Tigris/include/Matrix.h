@@ -151,3 +151,16 @@ namespace tigris{
 
 	
 }
+
+
+
+template<>
+struct std::formatter<tigris::Matrix>{
+    constexpr auto parse(std::format_parse_context& ctx) const -> auto {
+        return ctx.begin();
+    }
+
+    auto format(const tigris::Matrix& matrix, std::format_context& ctx) const -> auto {
+        return std::format_to(ctx.out(), "{}", matrix.toString());
+    }
+};

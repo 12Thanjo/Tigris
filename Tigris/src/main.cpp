@@ -124,7 +124,7 @@ auto ai_play_tic_tac_toe(const tigris::AI& x_player, const tigris::AI& o_player)
 				results[i] = result[0, 0];
 			}
 
-			return possible_moves[std::distance(results.begin(), std::max_element(results.begin(), results.end()))];
+			return possible_moves[std::distance(results.begin(), std::min_element(results.begin(), results.end()))];
 		}
 	);
 }
@@ -159,17 +159,14 @@ auto main(int argc, const char* argv[]) -> int {
 
 
 
-
-
-
-	static constexpr size_t POPULATION = 500;
-	static constexpr size_t NUM_ITERS_PER_EPOCH = 1;
-	static constexpr float MUTATION_RATE = 0.1f;
-	static constexpr float NUM_NEW_RANDOM = 49;
+	static constexpr size_t POPULATION = 200;
+	static constexpr size_t NUM_ITERS_PER_EPOCH = 10;
+	static constexpr float MUTATION_RATE = 0.01f;
+	static constexpr float NUM_NEW_RANDOM = 0;
 	static constexpr size_t NUM_RUNS_AGAINST_RANDOM = 50;
 
 
-	auto environment = tigris::Environment(POPULATION, {9, 32, 32, 1});
+	auto environment = tigris::Environment(POPULATION, {9, 64, 1});
 	environment.initRandom();
 
 	size_t last_num_losses = 0;
@@ -256,6 +253,8 @@ auto main(int argc, const char* argv[]) -> int {
 		];
 
 
+		std::srand(12);
+
 		size_t num_wins = 0;
 		size_t num_draws = 0;
 		size_t num_losses = 0;
@@ -276,7 +275,12 @@ auto main(int argc, const char* argv[]) -> int {
 						];
 					},
 					[&](evo::ArrayProxy<tigris::tic_tac_toe::Board> possible_moves) -> tigris::tic_tac_toe::Board {
-						return possible_moves[evo::random(possible_moves.size()-1)];
+						// return possible_moves[evo::random(possible_moves.size()-1)];
+						if(possible_moves.size() == 1){
+							return possible_moves[0];
+						}else{
+							return possible_moves[std::rand() % (possible_moves.size() - 1)];
+						}
 					}
 				);
 
@@ -291,8 +295,12 @@ auto main(int argc, const char* argv[]) -> int {
 			{
 				const TicTacToeStatus game_result = play_tic_tac_toe(
 					[&](evo::ArrayProxy<tigris::tic_tac_toe::Board> possible_moves) -> tigris::tic_tac_toe::Board {
-						return possible_moves[evo::random(possible_moves.size()-1)];
-						// return possible_moves[0];
+						// return possible_moves[evo::random(possible_moves.size()-1)];
+						if(possible_moves.size() == 1){
+							return possible_moves[0];
+						}else{
+							return possible_moves[std::rand() % (possible_moves.size() - 1)];
+						}
 					},
 					[&](evo::ArrayProxy<tigris::tic_tac_toe::Board> possible_moves){
 						auto results = std::vector<float>(possible_moves.size());
@@ -304,7 +312,7 @@ auto main(int argc, const char* argv[]) -> int {
 						}
 
 						return possible_moves[
-							std::distance(results.begin(), std::max_element(results.begin(), results.end()))
+							std::distance(results.begin(), std::min_element(results.begin(), results.end()))
 						];
 					}
 				);

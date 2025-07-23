@@ -48,6 +48,8 @@ namespace tigris{
 
 
 			auto createNewPopulation(float mutation_rate, float num_new_random) -> void {
+				evo::debugAssert(num_new_random <= this->totalPopulation - 1, "Too many new random");
+				
 				auto new_population = std::vector<AI>();
 				new_population.reserve(this->totalPopulation);
 

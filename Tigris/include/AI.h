@@ -39,16 +39,16 @@ namespace tigris{
 			auto calculate(std::vector<float>&& inputs) const -> Matrix {
 				auto output = tigris::Matrix(this->matrices[0].height(), 1, std::move(inputs));
 
-				for(size_t i = 0; const Matrix& matrix : this->matrices){
+				for(const Matrix& matrix : this->matrices){
 					output *= matrix;
 
-					if(i + 1 < this->matrices.size()){
-						for(float& value : output.data()){
-							value = sigmoid(value);
-						}
-					}
+					// for(float& value : output.data()){
+					// 	value = sigmoid(value);
+					// }
 
-					i += 1;
+					for(float& value : output.data()){
+						value = std::tanh(value);
+					}
 				}
 
 				return output;
@@ -56,10 +56,13 @@ namespace tigris{
 
 
 			auto mutate(float mutation_rate) -> void {
+				evo::debugAssert(mutation_rate >= 0.0f, "Mutation rate must be [0-1]");
+				evo::debugAssert(mutation_rate <= 1.0f, "Mutation rate must be [0-1]");
+
 				for(Matrix& matrix : this->matrices){
 					for(float& value : matrix.data()){
-						if(mutation_rate < float(evo::random01())){ continue; }
-						value = float(evo::random01());
+						if(mutation_rate > float(evo::random01())){ continue; }
+						value += float(evo::random01()/* * 0.2f - 0.1f*/);
 					}
 				}
 			}

@@ -1,6 +1,13 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.2.1"></a>
+### v0.2.1
+- Fixed muation rate in `tigris::AI` being inverted
+- Fixed AI playing O looking not inverting scores
+
+
+<!---------------------------------->
 <a name="v0.2.0"></a>
 ### v0.2.0
 - Added learning using evolution

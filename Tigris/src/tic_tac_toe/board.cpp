@@ -80,8 +80,8 @@ namespace tigris::tic_tac_toe{
 			for(Space space : row){
 				switch(space){
 					break; case Space::EMPTY: output.emplace_back(0.0f);
-					break; case Space::X:     output.emplace_back(0.5f);
-					break; case Space::O:     output.emplace_back(1.0f);
+					break; case Space::X:     output.emplace_back(1.0f);
+					break; case Space::O:     output.emplace_back(-1.0f);
 				}
 			}
 		}
