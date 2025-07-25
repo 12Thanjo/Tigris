@@ -14,12 +14,14 @@ project "tigris"
 	includedirs{
 		"./include/",
 		"../dependencies/",
+		"../Vulkan/include/"
 	}
 
 
 	links{
 		"Evo",
 		"os",
+		"Vulkan",
 	}
 
 

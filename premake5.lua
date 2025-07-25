@@ -88,7 +88,6 @@ target = {
 -- extern lib projects
 
 include "./dependencies/premake5_Evo.lua"
-include "./os/premake5_os.lua"
 
 
 ------------------------------------------------------------------------------
@@ -104,6 +103,8 @@ allmodulespublic "On"
 ------------------------------------------------------------------------------
 -- projects
 
+include "./os/premake5_os.lua"
+include "./Vulkan/premake5_vulkan.lua"
 include "./Tigris/premake5_tigris.lua"
 
 

@@ -12,6 +12,7 @@
 #include <Evo.h>
 
 #include <tigris.h>
+#include <Vulkan.h>
 #include "../os/Windows/include/windows.h"
 
 
@@ -102,7 +103,8 @@ auto play_tic_tac_toe(TicTacToePlayer x_player, TicTacToePlayer o_player) -> tig
 
 
 
-auto ai_play_tic_tac_toe(const tigris::AI& x_player, const tigris::AI& o_player) -> tigris::tic_tac_toe::Board::GameStatus {
+auto ai_play_tic_tac_toe(const tigris::AI& x_player, const tigris::AI& o_player)
+-> tigris::tic_tac_toe::Board::GameStatus {
 	return play_tic_tac_toe(
 		[&](evo::ArrayProxy<tigris::tic_tac_toe::Board> possible_moves){
 			auto results = std::vector<float>(possible_moves.size());
@@ -133,32 +135,7 @@ auto ai_play_tic_tac_toe(const tigris::AI& x_player, const tigris::AI& o_player)
 
 
 
-
-
-
-auto main(int argc, const char* argv[]) -> int {
-	auto args = std::vector<std::string_view>(argv, argv + argc);
-
-
-	#if defined(EVO_PLATFORM_WINDOWS)
-		os::windows::setConsoleToUTF8Mode();
-	#endif
-
-	#if defined(EVO_CONFIG_DEBUG)
-		evo::log::setDefaultThreadSaferCallback();
-	#endif
-
-	#if defined(EVO_PLATFORM_WINDOWS)
-		if(os::windows::isDebuggerPresent()){
-			std::atexit([]() -> void {
-				evo::printGray("Press [Enter] to close...");
-				std::cin.get();
-			});
-		}
-	#endif
-
-
-
+auto run_tic_tac_toe_training() -> void {
 	static constexpr size_t POPULATION = 200;
 	static constexpr size_t NUM_ITERS_PER_EPOCH = 10;
 	static constexpr float MUTATION_RATE = 0.01f;
@@ -353,6 +330,40 @@ auto main(int argc, const char* argv[]) -> int {
 	}
 		
 	evo::printlnGreen("Done");
+}
+
+
+
+
+
+
+
+auto main(int argc, const char* argv[]) -> int {
+	auto args = std::vector<std::string_view>(argv, argv + argc);
+
+
+	#if defined(EVO_PLATFORM_WINDOWS)
+		os::windows::setConsoleToUTF8Mode();
+	#endif
+
+	#if defined(EVO_CONFIG_DEBUG)
+		evo::log::setDefaultThreadSaferCallback();
+	#endif
+
+	#if defined(EVO_PLATFORM_WINDOWS)
+		if(os::windows::isDebuggerPresent()){
+			std::atexit([]() -> void {
+				evo::printGray("Press [Enter] to close...");
+				std::cin.get();
+			});
+		}
+	#endif
+
+
+	// /run_tic_tac_toe_training();
+
+	vulkan::test();
+
 
 
 	return 0;

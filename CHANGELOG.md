@@ -1,6 +1,12 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.3.0"></a>
+### v0.3.0
+- Added "test" for running compute through native Vulkan API
+
+
+<!---------------------------------->
 <a name="v0.2.1"></a>
 ### v0.2.1
 - Fixed muation rate in `tigris::AI` being inverted
