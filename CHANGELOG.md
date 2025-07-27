@@ -1,6 +1,16 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.4.0"></a>
+### v0.4.0
+- Added Vulkan debug utils messanger extension in debug builds
+- Added better physical device selecting
+- Added better messaging for Vulkan errors
+- Added `vulkan::Engine`
+- Added `vulkan::Queue`
+
+
+<!---------------------------------->
 <a name="v0.3.0"></a>
 ### v0.3.0
 - Added "test" for running compute through native Vulkan API

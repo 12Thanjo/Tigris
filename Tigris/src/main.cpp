@@ -346,9 +346,7 @@ auto main(int argc, const char* argv[]) -> int {
 		os::windows::setConsoleToUTF8Mode();
 	#endif
 
-	#if defined(EVO_CONFIG_DEBUG)
-		evo::log::setDefaultThreadSaferCallback();
-	#endif
+	evo::log::setDefaultThreadSaferCallback();
 
 	#if defined(EVO_PLATFORM_WINDOWS)
 		if(os::windows::isDebuggerPresent()){

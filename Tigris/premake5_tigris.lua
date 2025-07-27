@@ -14,7 +14,8 @@ project "tigris"
 	includedirs{
 		"./include/",
 		"../dependencies/",
-		"../Vulkan/include/"
+		"../Vulkan/include/",
+		(vulkan_sdk .. "/include/"),
 	}
 
 

@@ -9,9 +9,7 @@
 
 #include "../include/test.h"
 
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
-#include <Volk/volk.h>
+#include "../include/Engine.h"
 
 #include <filesystem>
 
@@ -19,49 +17,6 @@ namespace vulkan{
 
 	static constexpr int VULKAN_NO_FLAGS = 0;
 
-	EVO_NODISCARD static auto select_physical_device(evo::ArrayProxy<VkPhysicalDevice> physical_devices)
-	-> evo::Result<VkPhysicalDevice> {
-		for(const VkPhysicalDevice& physical_device : physical_devices){
-			auto props = VkPhysicalDeviceProperties2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-			vkGetPhysicalDeviceProperties2(physical_device, &props);
-
-			if(props.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU){
-				evo::println("Using discrete GPU: \"{}\"", props.properties.deviceName);
-				return physical_device;
-			}
-		}
-
-		if(physical_devices.empty()){
-			evo::log::fatal("No physical devices available for Vulkan");
-			return evo::resultError;
-		}
-
-		auto props = VkPhysicalDeviceProperties2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-		vkGetPhysicalDeviceProperties2(physical_devices[0], &props);
-		evo::println("No discrete GPU detected");
-		evo::println("Using fallback GPU: \"{}\"", props.properties.deviceName);
-		return physical_devices[0];
-	}
-
-
-	EVO_NODISCARD static auto select_queue_family_index(VkPhysicalDevice physical_device) -> evo::Result<uint32_t> {
-		uint32_t num_queue_families;
-		vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, nullptr);
-
-		auto queue_family_props = std::vector<VkQueueFamilyProperties>(num_queue_families);
-		vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &num_queue_families, queue_family_props.data());
-
-		for(size_t i = 0; const VkQueueFamilyProperties& queue_family_prop : queue_family_props){
-			if((queue_family_prop.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0){
-				return uint32_t(i);
-			}
-		
-			i += 1;
-		}
-
-		evo::log::fatal("physical device doesn't support Vulkan compute");
-		return evo::resultError;
-	}
 
 
 
@@ -89,9 +44,10 @@ namespace vulkan{
 			.queueFamilyIndexCount = 0,
 			.pQueueFamilyIndices   = nullptr,
 		};
-		if(vkCreateBuffer(device, &buffer_create_info, nullptr, buffer) != VK_SUCCESS){
-			evo::log::fatal("Failed to create vulkan buffer");
-			return evo::resultError;
+
+		{
+			const VkResult buffer_create_result = vkCreateBuffer(device, &buffer_create_info, nullptr, buffer);
+			if(utils::checkResult(buffer_create_result, "vkCreateBuffer").isError()){ return evo::resultError; }
 		}
 
 
@@ -130,7 +86,7 @@ namespace vulkan{
 				mem_reqs.memoryRequirements.memoryTypeBits >>= 1;
 			}
 
-			evo::log::fatal("No required Vulkan memory type index found");
+			evo::log::error("No required Vulkan memory type index found");
 			return evo::resultError;
 		}();
 		if(mem_alloc.isError()){ return evo::resultError; }
@@ -139,16 +95,19 @@ namespace vulkan{
 		//////////////////
 		// find a memory type index that fits the properties of the buffer
 
-		if(vkAllocateMemory(device, &mem_alloc.value(), nullptr, memory) != VK_SUCCESS){
-			evo::log::fatal("Failed to allocate memory for Vulkan buffer");
-			return evo::resultError;
+
+	
+		{
+			const VkResult result = vkAllocateMemory(device, &mem_alloc.value(), nullptr, memory);
+			if(utils::checkResult(result, "vkAllocateMemory").isError()){ return evo::resultError; }
 		}
 
 		if(data != nullptr){
 			void* mapped;
-			if(vkMapMemory(device, *memory, 0, size, 0, &mapped) != VK_SUCCESS){
-				evo::log::fatal("Failed to map Vulkan memory");
-				return evo::resultError;
+
+			{
+				const VkResult result = vkMapMemory(device, *memory, 0, size, 0, &mapped);
+				if(utils::checkResult(result, "vkMapMemory").isError()){ return evo::resultError; }
 			}
 
 			std::memcpy(mapped, data, size);
@@ -156,9 +115,10 @@ namespace vulkan{
 			vkUnmapMemory(device, *memory);
 		}
 
-		if(vkBindBufferMemory(device, *buffer, *memory, 0) != VK_SUCCESS){
-			evo::log::fatal("Failed to bind Vulkan buffer memory");
-			return evo::resultError;
+	
+		{
+			const VkResult result = vkBindBufferMemory(device, *buffer, *memory, 0);
+			if(utils::checkResult(result, "vkBindBufferMemory").isError()){ return evo::resultError; }
 		}
 
 
@@ -174,17 +134,17 @@ namespace vulkan{
 	-> evo::Result<VkShaderModule> {
 		const evo::Result<std::vector<evo::byte>> file = evo::fs::readBinaryFile(path.string());
 		if(file.isError()){
-			evo::log::fatal("Failed to load shader at path: \"{}\"", path.string());
+			evo::log::error("Failed to load shader at path: \"{}\"", path.string());
 			return evo::resultError;
 		}
 
 		if(file.value().size() % 4 != 0){
-			evo::log::fatal("File \"{}\" is not a valid shader file", path.string());
+			evo::log::error("File \"{}\" is not a valid shader file", path.string());
 			return evo::resultError;
 		}
 
 		if(reinterpret_cast<const uint32_t*>(file.value().data())[0] != 0x07230203){
-			evo::log::fatal("File \"{}\" is not a valid shader file", path.string());
+			evo::log::error("File \"{}\" is not a valid shader file", path.string());
 			return evo::resultError;
 		}
 
@@ -197,9 +157,9 @@ namespace vulkan{
 		};
 
 		VkShaderModule output;
-		if(vkCreateShaderModule(device, &create_info, nullptr, &output) != VK_SUCCESS){
-			evo::log::fatal("Failed to create shader at path: \"{}\"", path.string());
-			return evo::resultError;
+		{
+			const VkResult result = vkCreateShaderModule(device, &create_info, nullptr, &output);
+			if(utils::checkResult(result, "vkCreateShaderModule").isError()){ return evo::resultError; }
 		}
 
 		return output;
@@ -212,109 +172,10 @@ namespace vulkan{
 		evo::log::debug("Vulkan Test");
 
 
-		if(volkInitialize() != VK_SUCCESS){
-			evo::log::fatal("Your computer doesn't support Vulkan (failed to initialize Volk)");
-			return evo::Result<>();
-		}
+		auto engine = Engine();
 
+		if(engine.init().isError()){ return evo::resultError; }
 
-		///////////////////////////////////
-		// create instance
-
-		const auto app_info = VkApplicationInfo{
-			.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-			.pNext              = nullptr,
-			.pApplicationName   = "Tigris",
-			.applicationVersion = VK_MAKE_API_VERSION(0, 0, 3, 0),
-			.pEngineName        = "Tigris Engine",
-			.engineVersion      = VK_MAKE_API_VERSION(0, 0, 3, 0),
-			.apiVersion         = VK_API_VERSION_1_1,
-		};
-
-
-		const auto debug_layers = std::to_array<const char*>({
-			"VK_LAYER_KHRONOS_validation",
-		});
-
-		const auto instance_create_info = VkInstanceCreateInfo{
-			.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-			.pNext                   = nullptr,
-			.flags                   = VULKAN_NO_FLAGS,
-			.pApplicationInfo        = &app_info,
-
-			#if defined(_DEBUG)
-				.enabledLayerCount   = uint32_t(debug_layers.size()),
-				.ppEnabledLayerNames = debug_layers.data(),
-			#else
-				.enabledLayerCount   = 0,
-				.ppEnabledLayerNames = nullptr,
-			#endif
-
-			.enabledExtensionCount   = 0,
-			.ppEnabledExtensionNames = nullptr,
-		};
-
-		VkInstance instance;
-		if(vkCreateInstance(&instance_create_info, nullptr, &instance) != VK_SUCCESS){
-			evo::log::fatal("Your computer doesn't support Vulkan (failed to create Vulkan instance)");
-			return evo::resultError;
-		}
-
-		volkLoadInstance(instance);
-
-
-		///////////////////////////////////
-		// create device
-
-		uint32_t num_physical_devices = 0;
-		vkEnumeratePhysicalDevices(instance, &num_physical_devices, nullptr);
-
-		auto physical_devices = std::vector<VkPhysicalDevice>(num_physical_devices);
-		vkEnumeratePhysicalDevices(instance, &num_physical_devices, physical_devices.data());
-
-		const evo::Result<VkPhysicalDevice> physical_device = select_physical_device(physical_devices);
-		if(physical_device.isError()){ return evo::resultError; }
-
-
-		const auto queue_priorities = std::array<float, 1>{1.0f};
-
-		const evo::Result<uint32_t> queue_family_index = select_queue_family_index(physical_device.value());
-		if(queue_family_index.isError()){ return evo::resultError; }
-
-		const auto queue_create_info = VkDeviceQueueCreateInfo{
-			.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-			.pNext            = nullptr,
-			.flags            = VULKAN_NO_FLAGS,
-			.queueFamilyIndex = queue_family_index.value(),
-			.queueCount       = uint32_t(queue_priorities.size()),
-			.pQueuePriorities = queue_priorities.data(),
-		};
-
-		const auto device_create_info = VkDeviceCreateInfo{
-			.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-			.pNext                   = nullptr,
-			.flags                   = VULKAN_NO_FLAGS,
-			.queueCreateInfoCount    = 1,
-			.pQueueCreateInfos       = &queue_create_info,
-			.enabledLayerCount       = 0,       // depricated
-			.ppEnabledLayerNames     = nullptr, // depricated
-			.enabledExtensionCount   = 0,
-			.ppEnabledExtensionNames = nullptr,
-			.pEnabledFeatures        = nullptr,
-		};
-
-		VkDevice device;
-		if(vkCreateDevice(physical_device.value(), &device_create_info, nullptr, &device) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan device");
-			return evo::resultError;
-		}
-
-
-		///////////////////////////////////
-		// create single compute queue
-
-		VkQueue queue;
-		vkGetDeviceQueue(device, queue_family_index.value(), 0, &queue);
 
 
 		///////////////////////////////////
@@ -324,12 +185,12 @@ namespace vulkan{
 			.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			.pNext            = nullptr,
 			.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = queue_family_index.value(),
+			.queueFamilyIndex = engine.queue_family_index,
 		};
 		VkCommandPool command_pool;
-		if(vkCreateCommandPool(device, &command_pool_create_info, nullptr, &command_pool) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan command pool");
-			return evo::resultError;
+		{
+			const VkResult res = vkCreateCommandPool(engine.device, &command_pool_create_info, nullptr, &command_pool);
+			if(utils::checkResult(res, "vkCreateCommandPool").isError()){ return evo::resultError; }
 		}
 
 
@@ -359,8 +220,8 @@ namespace vulkan{
 		// copy input data to VRAM iusing a staging buffer
 		{
 			if(create_buffer(
-				device,
-				physical_device.value(),
+				engine.device,
+				engine.physical_device,
 				VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 				&host_buffer,
@@ -374,7 +235,7 @@ namespace vulkan{
 			// flush writes to host visible buffer
 
 			void* mapped;
-			vkMapMemory(device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+			vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
 			const auto mapped_range = VkMappedMemoryRange{
 				.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
 				.pNext  = nullptr,
@@ -382,12 +243,12 @@ namespace vulkan{
 				.offset = 0,
 				.size   = VK_WHOLE_SIZE,
 			};
-			vkFlushMappedMemoryRanges(device, 1, &mapped_range);
-			vkUnmapMemory(device, host_memory);
+			vkFlushMappedMemoryRanges(engine.device, 1, &mapped_range);
+			vkUnmapMemory(engine.device, host_memory);
 
 			if(create_buffer(
-				device,
-				physical_device.value(),
+				engine.device,
+				engine.physical_device,
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 					| VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 					| VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -409,9 +270,9 @@ namespace vulkan{
 				.commandBufferCount = 1,
 			};
 			VkCommandBuffer copy_cmd;
-			if(vkAllocateCommandBuffers(device, &cmd_buffer_allocate_info, &copy_cmd) != VK_SUCCESS){
-				evo::log::fatal("Failed to allocate Vulcan command buffer");
-				return evo::resultError;
+			{
+				const VkResult result = vkAllocateCommandBuffers(engine.device, &cmd_buffer_allocate_info, &copy_cmd);
+				if(utils::checkResult(result, "vkAllocateCommandBuffers").isError()){ return evo::resultError; }
 			}
 
 			const auto command_buffer_begin_info = VkCommandBufferBeginInfo{
@@ -420,9 +281,9 @@ namespace vulkan{
 				.flags            = VULKAN_NO_FLAGS,
 				.pInheritanceInfo = nullptr,
 			};
-			if(vkBeginCommandBuffer(copy_cmd, &command_buffer_begin_info) != VK_SUCCESS){
-				evo::log::fatal("Failed to begin Vulkan command buffer");
-				return evo::resultError;
+			{
+				const VkResult result = vkBeginCommandBuffer(copy_cmd, &command_buffer_begin_info);
+				if(utils::checkResult(result, "vkBeginCommandBuffer").isError()){ return evo::resultError; }
 			}
 
 			const auto copy_region = VkBufferCopy{
@@ -431,8 +292,7 @@ namespace vulkan{
 				.size      = BUFFER_SIZE,
 			};
 			vkCmdCopyBuffer(copy_cmd, host_buffer, device_buffer, 1, &copy_region);
-			if(vkEndCommandBuffer(copy_cmd) != VK_SUCCESS){
-				evo::log::fatal("failed to end command buffer");
+			if(utils::checkResult(vkEndCommandBuffer(copy_cmd), "vkEndCommandBuffer").isError()){
 				return evo::resultError;
 			}
 
@@ -442,9 +302,9 @@ namespace vulkan{
 				.flags = VULKAN_NO_FLAGS,
 			};
 			VkFence fence;
-			if(vkCreateFence(device, &fence_create_info, nullptr, &fence) != VK_SUCCESS){
-				evo::log::fatal("Failed to create Vulkan fence");
-				return evo::resultError;
+			{
+				const VkResult result = vkCreateFence(engine.device, &fence_create_info, nullptr, &fence);
+				if(utils::checkResult(result, "vkCreateFence").isError()){ return evo::resultError; }
 			}
 
 
@@ -462,17 +322,16 @@ namespace vulkan{
 				.signalSemaphoreCount = 0,
 				.pSignalSemaphores    = nullptr,
 			};
-			if(vkQueueSubmit(queue, 1, &submit_info, fence) != VK_SUCCESS){
-				evo::log::fatal("Failed to submit Vulkan queue");
-				return evo::resultError;
-			}
-			if(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS){
-				evo::log::fatal("Failed to wait for Vulkan fences");
-				return evo::resultError;
+
+			if(engine.queue.submit(submit_info, fence).isError()){ return evo::resultError; }
+
+			{
+				const VkResult result = vkWaitForFences(engine.device, 1, &fence, VK_TRUE, UINT64_MAX);
+				if(utils::checkResult(result, "vkWaitForFences").isError()){ return evo::resultError; }
 			}
 
-			vkDestroyFence(device, fence, nullptr);
-			vkFreeCommandBuffers(device, command_pool, 1, &copy_cmd);
+			vkDestroyFence(engine.device, fence, nullptr);
+			vkFreeCommandBuffers(engine.device, command_pool, 1, &copy_cmd);
 		}
 
 
@@ -501,9 +360,11 @@ namespace vulkan{
 			.poolSizeCount = uint32_t(pool_sizes.size()),
 			.pPoolSizes    = pool_sizes.data(),
 		};
-		if(vkCreateDescriptorPool(device, &descriptor_pool_info, nullptr, &descriptor_pool) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan descriptor pool");
-			return evo::resultError;
+		
+		{
+			const VkResult result =
+				vkCreateDescriptorPool(engine.device, &descriptor_pool_info, nullptr, &descriptor_pool);
+			if(utils::checkResult(result, "vkCreateDescriptorPool").isError()){ return evo::resultError; }
 		}
 
 
@@ -523,9 +384,11 @@ namespace vulkan{
 			.bindingCount = uint32_t(set_layout_bindings.size()),
 			.pBindings    = set_layout_bindings.data(),
 		};
-		if(vkCreateDescriptorSetLayout(device, &descriptor_layout, nullptr, &descriptor_set_layout) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan descriptor set layout");
-			return evo::resultError;
+		
+		{
+			const VkResult result =
+				vkCreateDescriptorSetLayout(engine.device, &descriptor_layout, nullptr, &descriptor_set_layout);
+			if(utils::checkResult(result, "vkCreateDescriptorSetLayout").isError()){ return evo::resultError; }
 		}
 
 
@@ -538,9 +401,11 @@ namespace vulkan{
 			.pushConstantRangeCount = 0,
 			.pPushConstantRanges    = nullptr,
 		};
-		if(vkCreatePipelineLayout(device, &pipeline_create_info, nullptr, &pipeline_layout) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan pipeline layout");
-			return evo::resultError;
+		
+		{
+			const VkResult result =
+				vkCreatePipelineLayout(engine.device, &pipeline_create_info, nullptr, &pipeline_layout);
+			if(utils::checkResult(result, "vkCreatePipelineLayout").isError()){ return evo::resultError; }
 		}
 
 
@@ -551,9 +416,10 @@ namespace vulkan{
 			.descriptorSetCount = 1,
 			.pSetLayouts        = &descriptor_set_layout,
 		};
-		if(vkAllocateDescriptorSets(device, &alloc_info, &descriptor_set) != VK_SUCCESS){
-			evo::log::fatal("Failed to allocate Vulkan descriptor set");
-			return evo::resultError;
+		
+		{
+			const VkResult result = vkAllocateDescriptorSets(engine.device, &alloc_info, &descriptor_set);
+			if(utils::checkResult(result, "vkAllocateDescriptorSets").isError()){ return evo::resultError; }
 		}
 
 
@@ -573,7 +439,7 @@ namespace vulkan{
 			}
 		});
 		vkUpdateDescriptorSets(
-			device,
+			engine.device,
 			uint32_t(compute_write_descriptor_sets.size()),
 			compute_write_descriptor_sets.data(),
 			0,
@@ -589,9 +455,10 @@ namespace vulkan{
 			.initialDataSize = 0,
 			.pInitialData    = nullptr,
 		};
-		if(vkCreatePipelineCache(device, &pipline_cache_create_info, nullptr, &pipeline_cache) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan pipeline cache");
-			return evo::resultError;
+		{
+			const VkResult result = 
+				vkCreatePipelineCache(engine.device, &pipline_cache_create_info, nullptr, &pipeline_cache);
+			if(utils::checkResult(result, "vkCreatePipelineCache").isError()){ return evo::resultError; }
 		}
 
 
@@ -611,7 +478,7 @@ namespace vulkan{
 		};
 
 		const evo::Result<VkShaderModule> shader_module_res =
-			create_shader_module(device, "../Vulkan/shaders/compute.comp.spv");
+			create_shader_module(engine.device, "../Vulkan/shaders/compute.comp.spv");
 		if(shader_module_res.isError()){ return evo::resultError; }
 
 		shader_module = shader_module_res.value();
@@ -637,11 +504,12 @@ namespace vulkan{
 			.basePipelineHandle = VK_NULL_HANDLE,
 			.basePipelineIndex  = 0,
 		};
-		if(vkCreateComputePipelines(
-			device, pipeline_cache, 1, &compute_pipeline_create_info, nullptr, &pipeline
-		) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan compute pipeline");
-			return evo::resultError;
+
+		{
+			const VkResult result = vkCreateComputePipelines(
+				engine.device, pipeline_cache, 1, &compute_pipeline_create_info, nullptr, &pipeline
+			);
+			if(utils::checkResult(result, "vkCreateComputePipelines").isError()){ return evo::resultError; }
 		}
 
 		// Create a command buffer for compute operations
@@ -652,9 +520,9 @@ namespace vulkan{
 			.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 			.commandBufferCount = 1
 		};
-		if(vkAllocateCommandBuffers(device, &cmd_buffer_allocate_info, &command_buffer) != VK_SUCCESS){
-			evo::log::fatal("Failed to create vulkan command buffers");
-			return evo::resultError;
+		{
+			const VkResult result = vkAllocateCommandBuffers(engine.device, &cmd_buffer_allocate_info, &command_buffer);
+			if(utils::checkResult(result, "vkAllocateCommandBuffers").isError()){ return evo::resultError; }
 		}
 
 		// Fence for compute CB sync
@@ -663,9 +531,9 @@ namespace vulkan{
 			.pNext = nullptr,
 			.flags = VK_FENCE_CREATE_SIGNALED_BIT,
 		};
-		if(vkCreateFence(device, &fence_create_info, nullptr, &fence) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan fence");
-			return evo::resultError;
+		{
+			const VkResult result = vkCreateFence(engine.device, &fence_create_info, nullptr, &fence);
+			if(utils::checkResult(result, "vkCreateFence").isError()){ return evo::resultError; }
 		}
 
 
@@ -678,9 +546,9 @@ namespace vulkan{
 			.flags            = VULKAN_NO_FLAGS,
 			.pInheritanceInfo = nullptr,
 		};
-		if(vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info) != VK_SUCCESS){
-			evo::log::fatal("Failed to create Vulkan command buffer");
-			return evo::resultError;
+		{
+			const VkResult result = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
+			if(utils::checkResult(result, "vkBeginCommandBuffer").isError()){ return evo::resultError; }
 		}
 
 
@@ -762,13 +630,12 @@ namespace vulkan{
 			0, nullptr
 		);
 
-		if(vkEndCommandBuffer(command_buffer) != VK_SUCCESS){
-			evo::log::fatal("Failed to end Vulkan command buffer");
+		if(utils::checkResult(vkEndCommandBuffer(command_buffer), "vkEndCommandBuffer").isError()){
 			return evo::resultError;
 		}
 
 		// Submit compute work
-		vkResetFences(device, 1, &fence);
+		vkResetFences(engine.device, 1, &fence);
 		const VkPipelineStageFlags wait_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
 		const auto compute_submit_info = VkSubmitInfo{
@@ -783,18 +650,16 @@ namespace vulkan{
 			.pSignalSemaphores    = nullptr,
 		};
 
-		if(vkQueueSubmit(queue, 1, &compute_submit_info, fence) != VK_SUCCESS){
-			evo::log::fatal("Failed to submit Vulkan queue");
-			return evo::resultError;
-		}
-		if(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS){
-			evo::log::fatal("Failed to wait for Vulkan fences");
-			return evo::resultError;
+		if(engine.queue.submit(compute_submit_info, fence).isError()){ return evo::resultError; }
+
+		{
+			const VkResult result = vkWaitForFences(engine.device, 1, &fence, VK_TRUE, UINT64_MAX);
+			if(utils::checkResult(result, "vkWaitForFences").isError()){ return evo::resultError; }
 		}
 
 		// Make device writes visible to the host
 		void* mapped;
-		vkMapMemory(device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+		vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
 		const auto mapped_range = VkMappedMemoryRange{
 			.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
 			.pNext  = nullptr,
@@ -802,17 +667,17 @@ namespace vulkan{
 			.offset = 0,
 			.size   = VK_WHOLE_SIZE,
 		};
-		vkInvalidateMappedMemoryRanges(device, 1, &mapped_range);
+		vkInvalidateMappedMemoryRanges(engine.device, 1, &mapped_range);
 
 		// Copy to output
 		std::memcpy(compute_output.data(), mapped, BUFFER_SIZE);
-		vkUnmapMemory(device, host_memory);
+		vkUnmapMemory(engine.device, host_memory);
 
 
 		///////////////////////////////////
 		// done
 
-		vkQueueWaitIdle(queue);
+		engine.queue.waitIdle();
 
 
 		for(uint32_t value : compute_input){
@@ -831,23 +696,24 @@ namespace vulkan{
 		///////////////////////////////////
 		// clean up
 
-		vkDestroyFence(device, fence, nullptr);
-		vkDestroyPipeline(device, pipeline, nullptr);
-		vkDestroyShaderModule(device, shader_module, nullptr);
-		vkDestroyPipelineCache(device, pipeline_cache, nullptr);
-		vkDestroyPipelineLayout(device, pipeline_layout, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptor_set_layout, nullptr);
-		vkDestroyDescriptorPool(device, descriptor_pool, nullptr);
+		vkDestroyFence(engine.device, fence, nullptr);
+		vkDestroyPipeline(engine.device, pipeline, nullptr);
+		vkDestroyShaderModule(engine.device, shader_module, nullptr);
+		vkDestroyPipelineCache(engine.device, pipeline_cache, nullptr);
+		vkDestroyPipelineLayout(engine.device, pipeline_layout, nullptr);
+		vkDestroyDescriptorSetLayout(engine.device, descriptor_set_layout, nullptr);
+		vkDestroyDescriptorPool(engine.device, descriptor_pool, nullptr);
 
-		vkDestroyBuffer(device, host_buffer, nullptr);
-		vkFreeMemory(device, host_memory, nullptr);
+		vkDestroyBuffer(engine.device, host_buffer, nullptr);
+		vkFreeMemory(engine.device, host_memory, nullptr);
 
-		vkDestroyBuffer(device, device_buffer, nullptr);
-		vkFreeMemory(device, device_memory, nullptr);
+		vkDestroyBuffer(engine.device, device_buffer, nullptr);
+		vkFreeMemory(engine.device, device_memory, nullptr);
 
-		vkDestroyCommandPool(device, command_pool, nullptr);
-		vkDestroyDevice(device, nullptr);
-		vkDestroyInstance(instance, nullptr);
+		vkDestroyCommandPool(engine.device, command_pool, nullptr);
+
+
+		engine.deinit();
 
 		return evo::Result<>();
 	}

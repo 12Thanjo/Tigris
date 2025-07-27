@@ -10,7 +10,19 @@
 #pragma once
 
 
-#include "./utils.h"
-#include "./Queue.h"
-#include "./Engine.h"
-#include "./test.h"
+#include <Evo.h>
+
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+
+#include <Volk/volk.h>
+
+
+
+namespace vulkan::utils{
+
+
+	EVO_NODISCARD auto checkResult(VkResult result, std::string_view function_name) -> evo::Result<>;
+
+	
+}
