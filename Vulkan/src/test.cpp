@@ -10,124 +10,12 @@
 #include "../include/test.h"
 
 #include "../include/Engine.h"
+#include "../include/Buffer.h"
 
 #include <filesystem>
 
+
 namespace vulkan{
-
-	static constexpr int VULKAN_NO_FLAGS = 0;
-
-
-
-
-	EVO_NODISCARD static auto create_buffer(
-		VkDevice device,
-		VkPhysicalDevice physical_device,
-		VkBufferUsageFlags usage_flags,
-		VkMemoryPropertyFlags memory_property_flags,
-		VkBuffer* buffer,
-		VkDeviceMemory* memory,
-		VkDeviceSize size,
-		void* data = nullptr
-	) -> evo::Result<> {
-
-		//////////////////
-		// create buffer handle
-
-		const auto buffer_create_info = VkBufferCreateInfo{
-			.sType                 = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.pNext                 = nullptr,
-			.flags                 = VULKAN_NO_FLAGS,
-			.size                  = size,
-			.usage                 = usage_flags,
-			.sharingMode           = VK_SHARING_MODE_EXCLUSIVE,
-			.queueFamilyIndexCount = 0,
-			.pQueueFamilyIndices   = nullptr,
-		};
-
-		{
-			const VkResult buffer_create_result = vkCreateBuffer(device, &buffer_create_info, nullptr, buffer);
-			if(utils::checkResult(buffer_create_result, "vkCreateBuffer").isError()){ return evo::resultError; }
-		}
-
-
-		//////////////////
-		// create buffer memory
-
-		const auto buffer_memory_requirements_info = VkBufferMemoryRequirementsInfo2{
-			.sType  = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2,
-			.pNext  = nullptr,
-			.buffer = *buffer,
-		};
-		auto mem_reqs = VkMemoryRequirements2{ VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };  // uninit
-		vkGetBufferMemoryRequirements2(device, &buffer_memory_requirements_info, &mem_reqs);
-
-
-		auto device_memory_properties = VkPhysicalDeviceMemoryProperties2{ // uninit
-			VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2
-		};
-		vkGetPhysicalDeviceMemoryProperties2(physical_device, &device_memory_properties);
-
-		const evo::Result<VkMemoryAllocateInfo> mem_alloc = [&]() -> evo::Result<VkMemoryAllocateInfo> {
-			for(size_t i = 0; i < device_memory_properties.memoryProperties.memoryTypeCount; i+=1){
-				if((mem_reqs.memoryRequirements.memoryTypeBits & 1) == 1){
-					if(
-						(device_memory_properties.memoryProperties.memoryTypes[i].propertyFlags & memory_property_flags)
-						== memory_property_flags
-					){
-						return VkMemoryAllocateInfo{
-							.sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-							.pNext           = nullptr,
-							.allocationSize  = mem_reqs.memoryRequirements.size,
-							.memoryTypeIndex = uint32_t(i),
-						};
-					}
-				}
-				mem_reqs.memoryRequirements.memoryTypeBits >>= 1;
-			}
-
-			evo::log::error("No required Vulkan memory type index found");
-			return evo::resultError;
-		}();
-		if(mem_alloc.isError()){ return evo::resultError; }
-
-
-		//////////////////
-		// find a memory type index that fits the properties of the buffer
-
-
-	
-		{
-			const VkResult result = vkAllocateMemory(device, &mem_alloc.value(), nullptr, memory);
-			if(utils::checkResult(result, "vkAllocateMemory").isError()){ return evo::resultError; }
-		}
-
-		if(data != nullptr){
-			void* mapped;
-
-			{
-				const VkResult result = vkMapMemory(device, *memory, 0, size, 0, &mapped);
-				if(utils::checkResult(result, "vkMapMemory").isError()){ return evo::resultError; }
-			}
-
-			std::memcpy(mapped, data, size);
-
-			vkUnmapMemory(device, *memory);
-		}
-
-	
-		{
-			const VkResult result = vkBindBufferMemory(device, *buffer, *memory, 0);
-			if(utils::checkResult(result, "vkBindBufferMemory").isError()){ return evo::resultError; }
-		}
-
-
-		//////////////////
-		// done
-
-		return evo::Result<>();
-	}
-
 
 
 	EVO_NODISCARD static auto create_shader_module(VkDevice device, const std::filesystem::path& path)
@@ -151,7 +39,7 @@ namespace vulkan{
 		const auto create_info = VkShaderModuleCreateInfo{
 			.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 			.pNext    = nullptr,
-			.flags    = VULKAN_NO_FLAGS,
+			.flags    = utils::NO_FLAGS,
 			.codeSize = file.value().size(),
 			.pCode    = reinterpret_cast<const uint32_t*>(file.value().data()),
 		};
@@ -199,8 +87,8 @@ namespace vulkan{
 
 		static constexpr size_t NUM_BUFFER_ELEMS = 60;
 
-		auto compute_input = std::vector<uint32_t>(NUM_BUFFER_ELEMS);
-		auto compute_output = std::vector<uint32_t>(NUM_BUFFER_ELEMS);
+		auto compute_input = evo::SmallVector<uint32_t>(NUM_BUFFER_ELEMS);
+		auto compute_output = evo::SmallVector<uint32_t>(NUM_BUFFER_ELEMS);
 
 		for(size_t i = 0; i < NUM_BUFFER_ELEMS; i+=1){
 			compute_input[i] = uint32_t(i);
@@ -209,52 +97,34 @@ namespace vulkan{
 		static constexpr VkDeviceSize BUFFER_SIZE = NUM_BUFFER_ELEMS * sizeof(uint32_t);
 
 
-		VkBuffer device_buffer;
-		VkDeviceMemory device_memory;
-
-		VkBuffer host_buffer;
-		VkDeviceMemory host_memory;
+		auto host_buffer = Buffer();
+		auto device_buffer = Buffer();
 
 
 		///////////////////////////////////
 		// copy input data to VRAM iusing a staging buffer
 		{
-			if(create_buffer(
+			if(host_buffer.init(
 				engine.device,
 				engine.physical_device,
 				VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-				&host_buffer,
-				&host_memory,
-				BUFFER_SIZE,
-				compute_input.data()
+				BUFFER_SIZE
 			).isError()){ return evo::resultError; }
 
+			if(host_buffer.writeData(static_cast<evo::ArrayProxy<uint32_t>>(compute_input)).isError()){
+				return evo::resultError;
+			}
+			host_buffer.flushWrite();
 
-			//////////////////
-			// flush writes to host visible buffer
 
-			void* mapped;
-			vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
-			const auto mapped_range = VkMappedMemoryRange{
-				.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-				.pNext  = nullptr,
-				.memory = host_memory,
-				.offset = 0,
-				.size   = VK_WHOLE_SIZE,
-			};
-			vkFlushMappedMemoryRanges(engine.device, 1, &mapped_range);
-			vkUnmapMemory(engine.device, host_memory);
-
-			if(create_buffer(
+			if(device_buffer.init(
 				engine.device,
 				engine.physical_device,
 				VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
 					| VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 					| VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-				&device_buffer,
-				&device_memory,
 				BUFFER_SIZE
 			).isError()){ return evo::resultError; }
 
@@ -278,7 +148,7 @@ namespace vulkan{
 			const auto command_buffer_begin_info = VkCommandBufferBeginInfo{
 				.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 				.pNext            = nullptr,
-				.flags            = VULKAN_NO_FLAGS,
+				.flags            = utils::NO_FLAGS,
 				.pInheritanceInfo = nullptr,
 			};
 			{
@@ -291,7 +161,7 @@ namespace vulkan{
 				.dstOffset = 0,
 				.size      = BUFFER_SIZE,
 			};
-			vkCmdCopyBuffer(copy_cmd, host_buffer, device_buffer, 1, &copy_region);
+			vkCmdCopyBuffer(copy_cmd, host_buffer.native(), device_buffer.native(), 1, &copy_region);
 			if(utils::checkResult(vkEndCommandBuffer(copy_cmd), "vkEndCommandBuffer").isError()){
 				return evo::resultError;
 			}
@@ -299,7 +169,7 @@ namespace vulkan{
 			const auto fence_create_info = VkFenceCreateInfo{
 				.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 				.pNext = nullptr,
-				.flags = VULKAN_NO_FLAGS,
+				.flags = utils::NO_FLAGS,
 			};
 			VkFence fence;
 			{
@@ -355,7 +225,7 @@ namespace vulkan{
 		const auto descriptor_pool_info = VkDescriptorPoolCreateInfo{
 			.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 			.pNext         = nullptr,
-			.flags         = VULKAN_NO_FLAGS,
+			.flags         = utils::NO_FLAGS,
 			.maxSets       = 1,
 			.poolSizeCount = uint32_t(pool_sizes.size()),
 			.pPoolSizes    = pool_sizes.data(),
@@ -380,7 +250,7 @@ namespace vulkan{
 		const auto descriptor_layout = VkDescriptorSetLayoutCreateInfo{
 			.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 			.pNext        = nullptr,
-			.flags        = VULKAN_NO_FLAGS,
+			.flags        = utils::NO_FLAGS,
 			.bindingCount = uint32_t(set_layout_bindings.size()),
 			.pBindings    = set_layout_bindings.data(),
 		};
@@ -395,7 +265,7 @@ namespace vulkan{
 		const auto pipeline_create_info = VkPipelineLayoutCreateInfo{
 			.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 			.pNext                  = nullptr,
-			.flags                  = VULKAN_NO_FLAGS,
+			.flags                  = utils::NO_FLAGS,
 			.setLayoutCount         = 1,
 			.pSetLayouts            = &descriptor_set_layout,
 			.pushConstantRangeCount = 0,
@@ -423,7 +293,7 @@ namespace vulkan{
 		}
 
 
-		const auto buffer_descriptor = VkDescriptorBufferInfo(device_buffer, 0, VK_WHOLE_SIZE);
+		const auto buffer_descriptor = VkDescriptorBufferInfo(device_buffer.native(), 0, VK_WHOLE_SIZE);
 		const auto compute_write_descriptor_sets = std::to_array<VkWriteDescriptorSet>({
 			VkWriteDescriptorSet{
 				.sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -451,7 +321,7 @@ namespace vulkan{
 		const auto pipline_cache_create_info = VkPipelineCacheCreateInfo{
 			.sType           = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
 			.pNext           = nullptr,
-			.flags           = VULKAN_NO_FLAGS,
+			.flags           = utils::NO_FLAGS,
 			.initialDataSize = 0,
 			.pInitialData    = nullptr,
 		};
@@ -490,11 +360,11 @@ namespace vulkan{
 		const auto compute_pipeline_create_info = VkComputePipelineCreateInfo{
 			.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
 			.pNext              = nullptr,
-			.flags              = VULKAN_NO_FLAGS,
+			.flags              = utils::NO_FLAGS,
 			.stage              = VkPipelineShaderStageCreateInfo{
 				.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 				.pNext               = nullptr,
-				.flags               = VULKAN_NO_FLAGS,
+				.flags               = utils::NO_FLAGS,
 				.stage               = VK_SHADER_STAGE_COMPUTE_BIT,
 				.module              = shader_module,
 				.pName               = "main",
@@ -543,7 +413,7 @@ namespace vulkan{
 		const auto command_buffer_begin_info = VkCommandBufferBeginInfo{
 			.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 			.pNext            = nullptr,
-			.flags            = VULKAN_NO_FLAGS,
+			.flags            = utils::NO_FLAGS,
 			.pInheritanceInfo = nullptr,
 		};
 		{
@@ -561,7 +431,7 @@ namespace vulkan{
 			.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT,
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.buffer              = device_buffer,
+			.buffer              = device_buffer.native(),
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
@@ -569,7 +439,7 @@ namespace vulkan{
 			command_buffer,
 			VK_PIPELINE_STAGE_HOST_BIT,
 			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-			VULKAN_NO_FLAGS,
+			utils::NO_FLAGS,
 			0, nullptr,
 			1, &buffer_barrier,
 			0, nullptr
@@ -590,7 +460,7 @@ namespace vulkan{
 			.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT,
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.buffer              = device_buffer,
+			.buffer              = device_buffer.native(),
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
@@ -598,7 +468,7 @@ namespace vulkan{
 			command_buffer,
 			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
-			VULKAN_NO_FLAGS,
+			utils::NO_FLAGS,
 			0, nullptr,
 			1, &buffer_barrier,
 			0, nullptr
@@ -606,7 +476,7 @@ namespace vulkan{
 
 		// Read back to host visible buffer
 		const auto copy_region = VkBufferCopy(0, 0, BUFFER_SIZE);
-		vkCmdCopyBuffer(command_buffer, device_buffer, host_buffer, 1, &copy_region);
+		vkCmdCopyBuffer(command_buffer, device_buffer.native(), host_buffer.native(), 1, &copy_region);
 
 		// Barrier to ensure that buffer copy is finished before host reading from it
 		buffer_barrier = VkBufferMemoryBarrier{
@@ -616,7 +486,7 @@ namespace vulkan{
 			.dstAccessMask       = VK_ACCESS_HOST_READ_BIT,
 			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
 			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-			.buffer              = host_buffer,
+			.buffer              = host_buffer.native(),
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
@@ -624,7 +494,7 @@ namespace vulkan{
 			command_buffer,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_HOST_BIT,
-			VULKAN_NO_FLAGS,
+			utils::NO_FLAGS,
 			0, nullptr,
 			1, &buffer_barrier,
 			0, nullptr
@@ -658,20 +528,23 @@ namespace vulkan{
 		}
 
 		// Make device writes visible to the host
-		void* mapped;
-		vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
-		const auto mapped_range = VkMappedMemoryRange{
-			.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-			.pNext  = nullptr,
-			.memory = host_memory,
-			.offset = 0,
-			.size   = VK_WHOLE_SIZE,
-		};
-		vkInvalidateMappedMemoryRanges(engine.device, 1, &mapped_range);
+		// void* mapped;
+		// vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+		// const auto mapped_range = VkMappedMemoryRange{
+		// 	.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+		// 	.pNext  = nullptr,
+		// 	.memory = host_memory,
+		// 	.offset = 0,
+		// 	.size   = VK_WHOLE_SIZE,
+		// };
+		// vkInvalidateMappedMemoryRanges(engine.device, 1, &mapped_range);
 
-		// Copy to output
-		std::memcpy(compute_output.data(), mapped, BUFFER_SIZE);
-		vkUnmapMemory(engine.device, host_memory);
+		// // Copy to output
+		// std::memcpy(compute_output.data(), mapped, BUFFER_SIZE);
+		// vkUnmapMemory(engine.device, host_memory);
+
+
+		compute_output = host_buffer.extractData<uint32_t>();
 
 
 		///////////////////////////////////
@@ -704,11 +577,8 @@ namespace vulkan{
 		vkDestroyDescriptorSetLayout(engine.device, descriptor_set_layout, nullptr);
 		vkDestroyDescriptorPool(engine.device, descriptor_pool, nullptr);
 
-		vkDestroyBuffer(engine.device, host_buffer, nullptr);
-		vkFreeMemory(engine.device, host_memory, nullptr);
-
-		vkDestroyBuffer(engine.device, device_buffer, nullptr);
-		vkFreeMemory(engine.device, device_memory, nullptr);
+		host_buffer.deinit();
+		device_buffer.deinit();
 
 		vkDestroyCommandPool(engine.device, command_pool, nullptr);
 

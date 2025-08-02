@@ -48,8 +48,7 @@ namespace vulkan{
 			auto waitIdle() -> void { vkQueueWaitIdle(this->queue); }
 
 		
-		// TODO(FUTURE): make private
-		public:
+		private:
 			VkQueue queue = VK_NULL_HANDLE;
 	};
 

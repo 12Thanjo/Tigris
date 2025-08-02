@@ -22,6 +22,9 @@
 namespace vulkan::utils{
 
 
+	static constexpr int NO_FLAGS = 0;
+
+
 	EVO_NODISCARD auto checkResult(VkResult result, std::string_view function_name) -> evo::Result<>;
 
 	

@@ -21,8 +21,6 @@ namespace vulkan{
 	//////////////////////////////////////////////////////////////////////
 	// vulkan helpers
 
-	static constexpr int VULKAN_NO_FLAGS = 0;
-
 
 	#if defined(_DEBUG)
 
@@ -153,9 +151,9 @@ namespace vulkan{
 			.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 			.pNext              = nullptr,
 			.pApplicationName   = "Tigris",
-			.applicationVersion = VK_MAKE_API_VERSION(0, 0, 4, 0),
+			.applicationVersion = VK_MAKE_API_VERSION(0, 0, 5, 0),
 			.pEngineName        = "Tigris Engine",
-			.engineVersion      = VK_MAKE_API_VERSION(0, 0, 4, 0),
+			.engineVersion      = VK_MAKE_API_VERSION(0, 0, 5, 0),
 			.apiVersion         = VK_API_VERSION_1_1,
 		};
 
@@ -184,7 +182,7 @@ namespace vulkan{
 			const auto debug_messenger_create_info = VkDebugUtilsMessengerCreateInfoEXT{
 				.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
 				.pNext           = nullptr,
-				.flags           = VULKAN_NO_FLAGS,
+				.flags           = utils::NO_FLAGS,
 				.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
 									| VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
 				                  	| VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
@@ -207,7 +205,7 @@ namespace vulkan{
 				.pNext               = nullptr,
 			#endif
 
-			.flags                   = VULKAN_NO_FLAGS,
+			.flags                   = utils::NO_FLAGS,
 			.pApplicationInfo        = &app_info,
 			.enabledLayerCount       = uint32_t(required_layers.size()),
 			.ppEnabledLayerNames     = required_layers.data(),
@@ -401,7 +399,7 @@ namespace vulkan{
 		const auto queue_create_info = VkDeviceQueueCreateInfo{
 			.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
 			.pNext            = nullptr,
-			.flags            = VULKAN_NO_FLAGS,
+			.flags            = utils::NO_FLAGS,
 			.queueFamilyIndex = this->queue_family_index,
 			.queueCount       = uint32_t(queue_priorities.size()),
 			.pQueuePriorities = queue_priorities.data(),
@@ -410,7 +408,7 @@ namespace vulkan{
 		const auto device_create_info = VkDeviceCreateInfo{
 			.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 			.pNext                   = nullptr,
-			.flags                   = VULKAN_NO_FLAGS,
+			.flags                   = utils::NO_FLAGS,
 			.queueCreateInfoCount    = 1,
 			.pQueueCreateInfos       = &queue_create_info,
 			.enabledLayerCount       = 0,       // depricated

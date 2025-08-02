@@ -12,5 +12,6 @@
 
 #include "./utils.h"
 #include "./Queue.h"
+#include "./Buffer.h"
 #include "./Engine.h"
 #include "./test.h"

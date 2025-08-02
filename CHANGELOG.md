@@ -1,6 +1,13 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.5.0"></a>
+### v0.5.0
+- Added `vulkan::Buffer`
+- Added `vulkan::utils::NO_FLAGS`
+
+
+<!---------------------------------->
 <a name="v0.4.0"></a>
 ### v0.4.0
 - Added Vulkan debug utils messanger extension in debug builds
