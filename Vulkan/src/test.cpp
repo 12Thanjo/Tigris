@@ -9,8 +9,10 @@
 
 #include "../include/test.h"
 
-#include "../include/Engine.h"
+#include "../include/Fence.h"
 #include "../include/Buffer.h"
+#include "../include/CommandPool.h"
+#include "../include/Engine.h"
 
 #include <filesystem>
 
@@ -61,6 +63,7 @@ namespace vulkan{
 
 
 		auto engine = Engine();
+		EVO_DEFER([&](){ engine.deinit(); });
 
 		if(engine.init().isError()){ return evo::resultError; }
 
@@ -69,17 +72,10 @@ namespace vulkan{
 		///////////////////////////////////
 		// create command pool
 
-		const auto command_pool_create_info = VkCommandPoolCreateInfo{
-			.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-			.pNext            = nullptr,
-			.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-			.queueFamilyIndex = engine.queue_family_index,
-		};
-		VkCommandPool command_pool;
-		{
-			const VkResult res = vkCreateCommandPool(engine.device, &command_pool_create_info, nullptr, &command_pool);
-			if(utils::checkResult(res, "vkCreateCommandPool").isError()){ return evo::resultError; }
-		}
+
+		auto command_pool = CommandPool();
+		if(command_pool.init(engine.device, engine.queue_family_index).isError()){ return evo::resultError; }
+		EVO_DEFER([&](){ command_pool.deinit(); });
 
 
 		///////////////////////////////////
@@ -98,7 +94,10 @@ namespace vulkan{
 
 
 		auto host_buffer = Buffer();
+		EVO_DEFER([&](){ host_buffer.deinit(); });
+
 		auto device_buffer = Buffer();
+		EVO_DEFER([&](){ device_buffer.deinit(); });
 
 
 		///////////////////////////////////
@@ -132,76 +131,35 @@ namespace vulkan{
 			//////////////////
 			// copy to staging buffer
 
-			const auto cmd_buffer_allocate_info = VkCommandBufferAllocateInfo{
-				.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				.pNext              = nullptr,
-				.commandPool        = command_pool,
-				.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-				.commandBufferCount = 1,
-			};
-			VkCommandBuffer copy_cmd;
 			{
-				const VkResult result = vkAllocateCommandBuffers(engine.device, &cmd_buffer_allocate_info, &copy_cmd);
-				if(utils::checkResult(result, "vkAllocateCommandBuffers").isError()){ return evo::resultError; }
+				evo::Result<evo::SmallVector<CommandBuffer>> allocated_command_buffers = 
+					command_pool.allocateCommandBuffers(1);
+				if(allocated_command_buffers.isError()){ return evo::resultError; }
+
+				CommandBuffer copy_cmd = std::move(allocated_command_buffers.value()[0]);
+
+
+				if(copy_cmd.begin().isError()){ return evo::resultError; }
+				copy_cmd.copyBuffer(host_buffer, device_buffer);
+				if(copy_cmd.end().isError()){ return evo::resultError; }
+
+
+				auto fence = Fence();
+				if(fence.init(engine.device).isError()){ return evo::resultError; }
+
+
+				//////////////////
+				// Submit to the queue
+
+				const auto submit_info = Queue::SubmitInfo(nullptr, nullptr, copy_cmd, nullptr);
+				if(engine.queue.submit(submit_info, fence).isError()){ return evo::resultError; }
+
+				if(fence.wait().isError()){ return evo::resultError; }
+
+				fence.deinit();
+
+				copy_cmd.deinit();
 			}
-
-			const auto command_buffer_begin_info = VkCommandBufferBeginInfo{
-				.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-				.pNext            = nullptr,
-				.flags            = utils::NO_FLAGS,
-				.pInheritanceInfo = nullptr,
-			};
-			{
-				const VkResult result = vkBeginCommandBuffer(copy_cmd, &command_buffer_begin_info);
-				if(utils::checkResult(result, "vkBeginCommandBuffer").isError()){ return evo::resultError; }
-			}
-
-			const auto copy_region = VkBufferCopy{
-				.srcOffset = 0,
-				.dstOffset = 0,
-				.size      = BUFFER_SIZE,
-			};
-			vkCmdCopyBuffer(copy_cmd, host_buffer.native(), device_buffer.native(), 1, &copy_region);
-			if(utils::checkResult(vkEndCommandBuffer(copy_cmd), "vkEndCommandBuffer").isError()){
-				return evo::resultError;
-			}
-
-			const auto fence_create_info = VkFenceCreateInfo{
-				.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-				.pNext = nullptr,
-				.flags = utils::NO_FLAGS,
-			};
-			VkFence fence;
-			{
-				const VkResult result = vkCreateFence(engine.device, &fence_create_info, nullptr, &fence);
-				if(utils::checkResult(result, "vkCreateFence").isError()){ return evo::resultError; }
-			}
-
-
-			//////////////////
-			// Submit to the queue
-
-			const auto submit_info = VkSubmitInfo{
-				.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-				.pNext                = nullptr,
-				.waitSemaphoreCount   = 0,
-				.pWaitSemaphores      = nullptr,
-				.pWaitDstStageMask    = nullptr,
-				.commandBufferCount   = 1,
-				.pCommandBuffers      = &copy_cmd,
-				.signalSemaphoreCount = 0,
-				.pSignalSemaphores    = nullptr,
-			};
-
-			if(engine.queue.submit(submit_info, fence).isError()){ return evo::resultError; }
-
-			{
-				const VkResult result = vkWaitForFences(engine.device, 1, &fence, VK_TRUE, UINT64_MAX);
-				if(utils::checkResult(result, "vkWaitForFences").isError()){ return evo::resultError; }
-			}
-
-			vkDestroyFence(engine.device, fence, nullptr);
-			vkFreeCommandBuffers(engine.device, command_pool, 1, &copy_cmd);
 		}
 
 
@@ -216,8 +174,7 @@ namespace vulkan{
 		VkPipelineCache pipeline_cache;
 		VkShaderModule shader_module;
 		VkPipeline pipeline;
-		VkCommandBuffer command_buffer;
-		VkFence fence;
+
 
 		const auto pool_sizes = std::to_array<VkDescriptorPoolSize>({
 			VkDescriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1),
@@ -382,44 +339,26 @@ namespace vulkan{
 			if(utils::checkResult(result, "vkCreateComputePipelines").isError()){ return evo::resultError; }
 		}
 
-		// Create a command buffer for compute operations
-		const auto cmd_buffer_allocate_info = VkCommandBufferAllocateInfo{
-			.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			.pNext              = nullptr,
-			.commandPool        = command_pool,
-			.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			.commandBufferCount = 1
-		};
-		{
-			const VkResult result = vkAllocateCommandBuffers(engine.device, &cmd_buffer_allocate_info, &command_buffer);
-			if(utils::checkResult(result, "vkAllocateCommandBuffers").isError()){ return evo::resultError; }
-		}
+
+		evo::Result<evo::SmallVector<CommandBuffer>> allocated_command_buffers = 
+			command_pool.allocateCommandBuffers(1);
+		if(allocated_command_buffers.isError()){ return evo::resultError; }
+
+		CommandBuffer command_buffer = std::move(allocated_command_buffers.value()[0]);
+
+
+
 
 		// Fence for compute CB sync
-		const auto fence_create_info = VkFenceCreateInfo{
-			.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-			.pNext = nullptr,
-			.flags = VK_FENCE_CREATE_SIGNALED_BIT,
-		};
-		{
-			const VkResult result = vkCreateFence(engine.device, &fence_create_info, nullptr, &fence);
-			if(utils::checkResult(result, "vkCreateFence").isError()){ return evo::resultError; }
-		}
+		auto fence = Fence();
+		if(fence.init(engine.device, VK_FENCE_CREATE_SIGNALED_BIT).isError()){ return evo::resultError; }
 
 
 		///////////////////////////////////
 		// create command buffer for compute work submission
 
-		const auto command_buffer_begin_info = VkCommandBufferBeginInfo{
-			.sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-			.pNext            = nullptr,
-			.flags            = utils::NO_FLAGS,
-			.pInheritanceInfo = nullptr,
-		};
-		{
-			const VkResult result = vkBeginCommandBuffer(command_buffer, &command_buffer_begin_info);
-			if(utils::checkResult(result, "vkBeginCommandBuffer").isError()){ return evo::resultError; }
-		}
+
+		command_buffer.begin();
 
 
 
@@ -435,24 +374,28 @@ namespace vulkan{
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
-		vkCmdPipelineBarrier(
-			command_buffer,
+		command_buffer.pipelineBarrier(
 			VK_PIPELINE_STAGE_HOST_BIT,
 			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			utils::NO_FLAGS,
-			0, nullptr,
-			1, &buffer_barrier,
-			0, nullptr
+			nullptr,
+			buffer_barrier,
+			nullptr
 		);
 
-		vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-		vkCmdBindDescriptorSets(
-			command_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &descriptor_set, 0, 0
+		command_buffer.bindPipeline(pipeline, VK_PIPELINE_BIND_POINT_COMPUTE);
+
+		command_buffer.bindDescriptorSets(
+			VK_PIPELINE_BIND_POINT_COMPUTE,
+			pipeline_layout,
+			0,
+			descriptor_set,
+			nullptr
 		);
 
-		vkCmdDispatch(command_buffer, NUM_BUFFER_ELEMS, 1, 1);
 
-		// Barrier to ensure that shader writes are finished before buffer is read back from GPU
+		command_buffer.dispatch(NUM_BUFFER_ELEMS);
+
 		buffer_barrier = VkBufferMemoryBarrier{
 			.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
 			.pNext               = nullptr,
@@ -464,19 +407,19 @@ namespace vulkan{
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
-		vkCmdPipelineBarrier(
-			command_buffer,
+		command_buffer.pipelineBarrier(
 			VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			utils::NO_FLAGS,
-			0, nullptr,
-			1, &buffer_barrier,
-			0, nullptr
+			nullptr,
+			buffer_barrier,
+			nullptr
 		);
 
+
 		// Read back to host visible buffer
-		const auto copy_region = VkBufferCopy(0, 0, BUFFER_SIZE);
-		vkCmdCopyBuffer(command_buffer, device_buffer.native(), host_buffer.native(), 1, &copy_region);
+		command_buffer.copyBuffer(device_buffer, host_buffer);
+
 
 		// Barrier to ensure that buffer copy is finished before host reading from it
 		buffer_barrier = VkBufferMemoryBarrier{
@@ -490,60 +433,27 @@ namespace vulkan{
 			.offset              = 0,
 			.size                = VK_WHOLE_SIZE,
 		};
-		vkCmdPipelineBarrier(
-			command_buffer,
+		command_buffer.pipelineBarrier(
 			VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_HOST_BIT,
 			utils::NO_FLAGS,
-			0, nullptr,
-			1, &buffer_barrier,
-			0, nullptr
+			nullptr,
+			buffer_barrier,
+			nullptr
 		);
+		if(command_buffer.end().isError()){ return evo::resultError; }
 
-		if(utils::checkResult(vkEndCommandBuffer(command_buffer), "vkEndCommandBuffer").isError()){
-			return evo::resultError;
-		}
 
 		// Submit compute work
-		vkResetFences(engine.device, 1, &fence);
+		fence.reset();
+
 		const VkPipelineStageFlags wait_stage_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-		const auto compute_submit_info = VkSubmitInfo{
-			.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-			.pNext                = nullptr,
-			.waitSemaphoreCount   = 0,
-			.pWaitSemaphores      = nullptr,
-			.pWaitDstStageMask    = &wait_stage_mask,
-			.commandBufferCount   = 1,
-			.pCommandBuffers      = &command_buffer,
-			.signalSemaphoreCount = 0,
-			.pSignalSemaphores    = nullptr,
-		};
-
+		const auto compute_submit_info = Queue::SubmitInfo(nullptr, wait_stage_mask, command_buffer, nullptr);
 		if(engine.queue.submit(compute_submit_info, fence).isError()){ return evo::resultError; }
 
-		{
-			const VkResult result = vkWaitForFences(engine.device, 1, &fence, VK_TRUE, UINT64_MAX);
-			if(utils::checkResult(result, "vkWaitForFences").isError()){ return evo::resultError; }
-		}
+		if(fence.wait().isError()){ return evo::resultError; }
 
 		// Make device writes visible to the host
-		// void* mapped;
-		// vkMapMemory(engine.device, host_memory, 0, VK_WHOLE_SIZE, 0, &mapped);
-		// const auto mapped_range = VkMappedMemoryRange{
-		// 	.sType  = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-		// 	.pNext  = nullptr,
-		// 	.memory = host_memory,
-		// 	.offset = 0,
-		// 	.size   = VK_WHOLE_SIZE,
-		// };
-		// vkInvalidateMappedMemoryRanges(engine.device, 1, &mapped_range);
-
-		// // Copy to output
-		// std::memcpy(compute_output.data(), mapped, BUFFER_SIZE);
-		// vkUnmapMemory(engine.device, host_memory);
-
-
 		compute_output = host_buffer.extractData<uint32_t>();
 
 
@@ -569,21 +479,14 @@ namespace vulkan{
 		///////////////////////////////////
 		// clean up
 
-		vkDestroyFence(engine.device, fence, nullptr);
+		command_buffer.deinit();
+		fence.deinit();
 		vkDestroyPipeline(engine.device, pipeline, nullptr);
 		vkDestroyShaderModule(engine.device, shader_module, nullptr);
 		vkDestroyPipelineCache(engine.device, pipeline_cache, nullptr);
 		vkDestroyPipelineLayout(engine.device, pipeline_layout, nullptr);
 		vkDestroyDescriptorSetLayout(engine.device, descriptor_set_layout, nullptr);
 		vkDestroyDescriptorPool(engine.device, descriptor_pool, nullptr);
-
-		host_buffer.deinit();
-		device_buffer.deinit();
-
-		vkDestroyCommandPool(engine.device, command_pool, nullptr);
-
-
-		engine.deinit();
 
 		return evo::Result<>();
 	}

@@ -11,7 +11,11 @@
 
 
 #include "./utils.h"
+#include "./Fence.h"
 #include "./Queue.h"
 #include "./Buffer.h"
+#include "./CommandPool.h"
+
 #include "./Engine.h"
+
 #include "./test.h"

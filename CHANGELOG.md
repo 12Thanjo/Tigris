@@ -1,6 +1,15 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.6.0"></a>
+### v0.6.0
+- Added `vulkan::CommandBuffer`
+- Added `vulkan::CommandPool`
+- Added `vulkan::Fence`
+- Added `vulkan::Queue`
+
+
+<!---------------------------------->
 <a name="v0.5.0"></a>
 ### v0.5.0
 - Added `vulkan::Buffer`
