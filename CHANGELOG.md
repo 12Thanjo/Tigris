@@ -1,6 +1,19 @@
 # Tigris Changelog
 
 <!---------------------------------->
+<a name="v0.7.0"></a>
+### v0.7.0
+- Added `vulkan::DescriptorPool`
+- Added `vulkan::DescriptorSetLayout`
+- Added `vulkan::Pipeline`
+- Added `vulkan::PipelineLayout`
+- Added `vulkan::PipelineCache`
+- Added `vulkan::ShaderModule`
+- Added missing copy/move constructors to vulkan classes
+- Made all vulkan classes with a `deinit` method call it in the destructor
+
+
+<!---------------------------------->
 <a name="v0.6.0"></a>
 ### v0.6.0
 - Added `vulkan::CommandBuffer`

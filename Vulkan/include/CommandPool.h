@@ -29,11 +29,7 @@ namespace vulkan{
 		public:
 			CommandPool() = default;
 
-			#if defined(_DEBUG)
-				~CommandPool(){ evo::debugAssert(this->isInitialized() == false, "Should have been deinitialized"); }
-			#else
-				~CommandPool() = default;
-			#endif
+			~CommandPool(){ if(this->isInitialized()){ this->deinit(); } }
 
 			CommandPool(const CommandPool&) = delete;
 

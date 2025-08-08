@@ -28,11 +28,7 @@ namespace vulkan{
 			CommandBuffer(class CommandPool& command_pool, VkCommandBuffer command_buffer)
 				: cmd_buffer(command_buffer), cmd_pool(&command_pool) {}
 
-			#if defined(_DEBUG)
-				~CommandBuffer(){ evo::debugAssert(this->isInitialized() == false, "Should have been deinitialized"); }
-			#else
-				~CommandBuffer() = default;
-			#endif
+			~CommandBuffer(){ if(this->isInitialized()){ this->deinit(); } }
 
 			CommandBuffer(const CommandBuffer&) = delete;
 			auto operator=(const CommandBuffer&) -> CommandBuffer& = delete;
@@ -43,13 +39,8 @@ namespace vulkan{
 			{}
 
 			auto operator=(CommandBuffer&& rhs) -> CommandBuffer& {
-				if(this->isInitialized()){ this->deinit(); }
-				this->cmd_buffer = rhs.cmd_buffer;
-				this->cmd_pool = rhs.cmd_pool;
-
-				rhs.cmd_buffer = VK_NULL_HANDLE;
-				rhs.cmd_pool = nullptr;
-
+				std::destroy_at(this);
+				std::construct_at(this, std::move(rhs));
 				return *this;
 			}
 
@@ -77,11 +68,11 @@ namespace vulkan{
 				evo::ArrayProxy<VkImageMemoryBarrier> image_memory_barriers
 			) -> void;
 
-			auto bindPipeline(VkPipeline pipeline, VkPipelineBindPoint bind_point) -> void;
+			auto bindPipeline(const class Pipeline& pipeline, VkPipelineBindPoint bind_point) -> void;
 
 			auto bindDescriptorSets(
 				VkPipelineBindPoint pipeline_bind_point,
-				VkPipelineLayout layout,
+				const class PipelineLayout& layout,
 				uint32_t first_set,
 				evo::ArrayProxy<VkDescriptorSet> descriptor_sets,
 				evo::ArrayProxy<uint32_t> dynamic_offsets

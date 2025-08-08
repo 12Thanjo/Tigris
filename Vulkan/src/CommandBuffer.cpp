@@ -12,6 +12,8 @@
 
 #include "../include/Buffer.h"
 #include "../include/CommandPool.h"
+#include "../include/Pipeline.h"
+#include "../include/PipelineLayout.h"
 
 
 namespace vulkan{
@@ -79,13 +81,13 @@ namespace vulkan{
 	}
 
 
-	auto CommandBuffer::bindPipeline(VkPipeline pipeline, VkPipelineBindPoint bind_point) -> void {
-		vkCmdBindPipeline(this->cmd_buffer, bind_point, pipeline);
+	auto CommandBuffer::bindPipeline(const Pipeline& pipeline, VkPipelineBindPoint bind_point) -> void {
+		vkCmdBindPipeline(this->cmd_buffer, bind_point, pipeline.native());
 	}
 
 	auto CommandBuffer::bindDescriptorSets(
 		VkPipelineBindPoint pipeline_bind_point,
-		VkPipelineLayout layout,
+		const class PipelineLayout& layout,
 		uint32_t first_set,
 		evo::ArrayProxy<VkDescriptorSet> descriptor_sets,
 		evo::ArrayProxy<uint32_t> dynamic_offsets
@@ -93,7 +95,7 @@ namespace vulkan{
 		vkCmdBindDescriptorSets(
 			this->cmd_buffer,
 			pipeline_bind_point,
-			layout,
+			layout.native(),
 			first_set,
 			uint32_t(descriptor_sets.size()),
 			descriptor_sets.data(),

@@ -11,10 +11,18 @@
 
 
 #include "./utils.h"
-#include "./Fence.h"
-#include "./Queue.h"
+
 #include "./Buffer.h"
+#include "./CommandBuffer.h"
 #include "./CommandPool.h"
+#include "./DescriptorPool.h"
+#include "./DescriptorSetLayout.h"
+#include "./Fence.h"
+#include "./Pipeline.h"
+#include "./PipelineCache.h"
+#include "./PipelineLayout.h"
+#include "./Queue.h"
+#include "./ShaderModule.h"
 
 #include "./Engine.h"
 

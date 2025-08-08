@@ -26,12 +26,18 @@ namespace vulkan{
 	class Engine{
 		public:
 			Engine() = default;
+			~Engine(){ if(this->isInitialized()){ this->deinit(); } }
 
-			#if defined(_DEBUG)
-				~Engine(){ evo::debugAssert(this->isInitialized() == false, "Should have been deinitialized"); }
-			#else
-				~Engine() = default;
-			#endif
+			Engine(const Engine&) = delete;
+			auto operator=(const Engine& rhs) -> Engine&;
+
+			Engine(Engine&&) = default;
+			auto operator=(Engine&& rhs) -> Engine& {
+				std::destroy_at(this);
+				std::construct_at(this, std::move(rhs));
+				return *this;
+			}
+
 
 			auto init() -> evo::Result<>;
 			auto deinit() -> void;

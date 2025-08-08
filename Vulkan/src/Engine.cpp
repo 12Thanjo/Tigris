@@ -151,9 +151,9 @@ namespace vulkan{
 			.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO,
 			.pNext              = nullptr,
 			.pApplicationName   = "Tigris",
-			.applicationVersion = VK_MAKE_API_VERSION(0, 0, 5, 0),
+			.applicationVersion = VK_MAKE_API_VERSION(0, 0, 7, 0),
 			.pEngineName        = "Tigris Engine",
-			.engineVersion      = VK_MAKE_API_VERSION(0, 0, 5, 0),
+			.engineVersion      = VK_MAKE_API_VERSION(0, 0, 7, 0),
 			.apiVersion         = VK_API_VERSION_1_1,
 		};
 

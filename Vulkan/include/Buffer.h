@@ -27,14 +27,11 @@ namespace vulkan{
 		public:
 			Buffer() = default;
 
-			#if defined(_DEBUG)
-				~Buffer(){ evo::debugAssert(this->isInitialized() == false, "Should have been deinitialized"); }
-			#else
-				~Buffer() = default;
-			#endif
+			~Buffer(){ if(this->isInitialized()){ this->deinit(); } }
 
 
 			Buffer(const Buffer&) = delete;
+			auto operator=(const Buffer&) = delete;
 
 			Buffer(Buffer&& rhs) : 
 				buffer(std::exchange(rhs.buffer, this->buffer)), 
@@ -42,6 +39,12 @@ namespace vulkan{
 				_device(std::exchange(rhs._device, this->_device)),
 				_size(std::exchange(rhs._size, this->_size))
 			{}
+
+			auto operator=(Buffer&& rhs) -> Buffer& {
+				std::destroy_at(this);
+				std::construct_at(this, std::move(rhs));
+				return *this;
+			}
 
 
 			auto init(
